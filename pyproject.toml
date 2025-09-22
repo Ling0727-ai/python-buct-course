@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "buct-course"
-version = "0.4.0"
+version = "1.0.1"
 description = "北京化工大学课程平台作业查询"
 readme = "README.md"
 requires-python = ">=3.7"

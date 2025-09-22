@@ -9,7 +9,7 @@ from .test_utils import TestUtils
 from .exceptions import BUCTCourseError, LoginError, NetworkError, ParseError
 from .client import BUCTClient, create_client
 
-__version__ = "0.4.0"
+__version__ = "1.0.1"
 __all__ = [
     'BUCTAuth', 'CourseUtils', 'TestUtils', 'BUCTClient', 'create_client',
     'BUCTCourseError', 'LoginError', 'NetworkError', 'ParseError'

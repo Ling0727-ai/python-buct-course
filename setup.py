@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="buct-course",
-    version="0.4.0",
+    version="1.0.1",
     author="LingXin07",
     author_email="ling1163840260@gmail.com",
     description="北京化工大学课程平台作业查询",
