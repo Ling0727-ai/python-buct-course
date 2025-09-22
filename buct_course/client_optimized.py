@@ -142,7 +142,7 @@ class BUCTClient:
             for test in pending_tests:
                 # 使用正确的测试链接格式
                 course_id = test.get('course_id', '')
-                test_link = f"https://course.buct.edu.cn/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=lesson19&cateId={course_id}&pagingPage=1&pagingNumberPer=7"
+                test_link = f"https://course.buct.edu.cn/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=new03&cateId={course_id}&pagingPage=1&pagingNumberPer=30"
                 
                 formatted_tests.append({
                     "title": test.get('course_name', '未知测试'),

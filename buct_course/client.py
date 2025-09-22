@@ -176,14 +176,8 @@ class BUCTClient:
                 if '已完成' in status or '已提交' in status or test.get('has_result', False):
                     completed_count += 1
 
-                # 构造测试链接
-                test_link = ""
-                if test.get('can_start') and test.get('test_id'):
-                    # 构造开始测试的链接
-                    test_link = f"{self.test_utils.base_url}/meol/common/question/test/student/test_start.jsp?testId={test.get('test_id')}"
-                elif test.get('result_href'):
-                    # 如果有结果链接，使用结果链接
-                    test_link = f"{self.test_utils.base_url}{test.get('result_href')}"
+                # 构造测试链接 - 使用统一的测试列表页面格式
+                test_link = f"{self.test_utils.base_url}/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=new03&cateId={lid}&pagingPage=1&pagingNumberPer=30"
 
                 formatted_tests.append({
                     "title": test.get('title', '未知测试'),

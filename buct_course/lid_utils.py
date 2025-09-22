@@ -210,7 +210,7 @@ class LidUtils:
         
         # 根据类型生成不同的URL
         if expected_type == "test":
-            url = f"{self.base_url}/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=lesson19&cateId={lid}&pagingPage=1&pagingNumberPer=7"
+            url = f"{self.base_url}/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=new03&cateId={lid}&pagingPage=1&pagingNumberPer=30"
         else:
             url = f"{self.base_url}/meol/jpk/course/layout/newpage/index.jsp?courseId={lid}"
         
