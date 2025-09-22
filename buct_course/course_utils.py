@@ -151,9 +151,22 @@ class CourseUtils:
         title_link = title_cell.find('a', class_='infolist')
         if title_link:
             homework_info['title'] = title_link.get_text(strip=True)
-            homework_info['detail_href'] = title_link.get('href', '')
-            if 'hwtid=' in homework_info['detail_href']:
-                homework_info['hwtid'] = homework_info['detail_href'].split('hwtid=')[1].split('&')[0]
+            detail_href = title_link.get('href', '')
+            
+            # 构造完整的详情URL
+            if detail_href.startswith('/'):
+                homework_info['detail_href'] = f"{self.base_url}{detail_href}"
+            elif detail_href.startswith('../../'):
+                homework_info['detail_href'] = f"{self.base_url}/meol/common/hw/student/{detail_href}"
+            elif detail_href.startswith('hwtask.view.jsp'):
+                # 相对路径，需要构造完整URL
+                homework_info['detail_href'] = f"{self.base_url}/meol/common/hw/student/{detail_href}"
+            else:
+                homework_info['detail_href'] = detail_href
+            
+            # 提取作业ID
+            if 'hwtid=' in detail_href:
+                homework_info['hwtid'] = detail_href.split('hwtid=')[1].split('&')[0]
         
         # 分组作业标识
         group_img = title_cell.find('img', title='分组作业')
@@ -200,6 +213,12 @@ class CourseUtils:
         homework_info['result_href'] = result_link.get('href', '') if result_link else ''
         homework_info['has_result'] = result_link is not None
         
+        # 构造作业详情链接 - 使用作业查看页面
+        if homework_info['hwtid']:
+            homework_info['detail_href'] = f"https://course.buct.edu.cn/meol/common/hw/student/hwtask.view.jsp?hwtid={homework_info['hwtid']}"
+        else:
+            homework_info['detail_href'] = ''
+        
         if not result_link and '未提交' in result_cell.get_text(strip=True):
             homework_info['status'] = '未提交'
         
@@ -230,7 +249,81 @@ class CourseUtils:
             detail_info['description'] = content_div.get_text(strip=True)
         
         return detail_info
-    
+
+    def get_homework_tasks(self, url):
+        """
+        获取作业详情页面中的具体题目要求
+        
+        Args:
+            url: 作业详情页面的URL（homework_info的detail_href）
+            
+        Returns:
+            list: 包含作业要求的文本列表
+        """
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+                "Referer": f"{self.base_url}/meol/common/hw/student/hwtask.jsp?tagbug=client&strStyle=new03"
+            }
+            
+            # 构造完整URL
+            if url.startswith('/'):
+                full_url = f"{self.base_url}{url}"
+            else:
+                full_url = url
+                
+            res = self.session.get(full_url, headers=headers, timeout=10)
+            res.raise_for_status()
+            
+            soup = BeautifulSoup(res.text, 'html.parser')
+            
+            # 查找隐藏的input字段，通常包含作业内容
+            content_inputs = soup.find_all('input', {'type': 'hidden'})
+            
+            tasks = []
+            for input_elem in content_inputs:
+                name = input_elem.get('name', '')
+                if 'content' in name:  # 查找包含content的input字段
+                    value = input_elem.get('value', '')
+                    if value:
+                        # HTML解码
+                        import html
+                        decoded_html = html.unescape(value)
+                        
+                        # 解析HTML内容
+                        content_soup = BeautifulSoup(decoded_html, 'html.parser')
+                        
+                        # 提取所有<p>标签中的文本
+                        p_tags = content_soup.find_all('p')
+                        for p in p_tags:
+                            text = p.get_text(strip=True)
+                            if text:  # 只添加非空文本
+                                tasks.append(text)
+                        
+                        # 如果没有p标签，直接提取文本
+                        if not p_tags:
+                            text = content_soup.get_text(strip=True)
+                            if text:
+                                tasks.append(text)
+            
+            # 如果没有找到隐藏input，尝试查找id="body"的div（备用方案）
+            if not tasks:
+                body_div = soup.find('div', id='body')
+                if body_div:
+                    p_tags = body_div.find_all('p')
+                    for p in p_tags:
+                        text = p.get_text(strip=True)
+                        if text:
+                            tasks.append(text)
+            
+            return tasks
+            
+        except Exception as e:
+            print(f"获取作业任务详情失败: {str(e)}")
+            return []
+
+
+
     def get_all_pending_homework_details(self):
         """
         获取所有待提交作业的详细信息，包含时间信息

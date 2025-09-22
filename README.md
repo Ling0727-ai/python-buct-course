@@ -1,256 +1,210 @@
-# buct-course
+# 北化课程系统 (BUCT Course System)
 
-北京化工大学课程平台API库
+一个用于北京化工大学课程平台的Python客户端，可以自动获取待办作业和测试信息。
 
 ## 功能特性
 
-- 自动化登录北化课程平台
-- 获取课程信息、待办任务
-- 查询和参与在线测试
-- 异常处理和错误提示
+- 🔐 **自动登录**: 支持学号密码登录
+- 📝 **作业管理**: 获取待提交作业列表，包含详细要求
+- 🧪 **测试管理**: 获取可进行的测试信息
+- ⏰ **截止时间**: 显示作业和测试的截止时间
+- 🎯 **智能过滤**: 只显示未完成且未超时的任务
+- 📋 **详细信息**: 提取作业的具体要求和任务描述
 
-## 安装
+## 安装依赖
 
-### 从PyPI安装（发布后可用）
 ```bash
-pip install buct-course
-```
-
-### 从源码安装
-```bash
-# 克隆仓库
-git clone https://github.com/yourusername/buct-course.git
-cd buct-course
-
-# 安装开发版本
-pip install -e .
-
-# 或者直接安装
-pip install .
+pip install requests beautifulsoup4 lxml
 ```
 
 ## 快速开始
 
-### 使用 BUCTClient (推荐)
+### 1. 基本使用
 
 ```python
 from buct_course import BUCTClient
 
-# 方式1: 创建客户端实例并立即登录
-client = BUCTClient("your_username", "your_password")
-
-# 方式2: 先创建客户端，稍后登录
+# 创建客户端
 client = BUCTClient()
-if client.login("your_username", "your_password"):
-    print("登录成功!")
 
-# 获取待办任务
-tasks = client.get_pending_tasks()
-print(f"待办任务: {tasks}")
-
-# 获取所有课程
-courses = client.get_courses()
-
-# 获取测试分类
-test_categories = client.get_test_categories()
-
-# 优雅退出
-client.logout()
+# 登录
+if client.login("你的学号", "你的密码"):
+    # 获取待办任务
+    tasks = client.get_pending_tasks()
+    client.display_tasks(tasks)
+    
+    # 显示详细作业信息
+    client.display_homework_with_tasks()
+    
+    # 显示测试信息
+    client.display_test_details()
 ```
 
-### 使用便捷函数
-
-```python
-from buct_course import get_pending_tasks, get_test_categories
-
-# 快速获取待办任务
-tasks = get_pending_tasks("your_username", "your_password")
-
-# 快速获取测试分类
-categories = get_test_categories("your_username", "your_password")
-```
-
-### 交互式模式（推荐）
-
-最简单的使用方式是运行交互式客户端：
+### 2. 交互式运行
 
 ```python
 from buct_course import BUCTClient
 
-# 启动交互式客户端
 client = BUCTClient()
-client.run_interactive()  # 这会提示输入账号密码并显示详细信息
+client.run_interactive()
 ```
+
+### 3. 命令行运行
+
+```bash
+# 运行主程序
+python main.py
+
+# 运行完整测试
+python complete_test.py
+```
+
+## 项目结构
+
+```
+python-buct-course/
+├── buct_course/           # 核心包
+│   ├── __init__.py       # 包初始化
+│   ├── auth.py           # 认证模块
+│   ├── client.py         # 主客户端
+│   ├── course_utils.py   # 课程工具
+│   ├── test_utils.py     # 测试工具
+│   ├── lid_utils.py      # 课程ID工具
+│   └── exceptions.py     # 异常定义
+├── example/              # 示例代码
+├── test/                 # 测试文件
+├── main.py              # 主程序入口
+├── complete_test.py     # 完整功能测试
+└── README.md           # 说明文档
+```
+
+## 核心功能
+
+### 作业管理
+
+- **获取作业列表**: 自动获取所有待提交作业
+- **过滤功能**: 只显示未完成且未超时的作业
+- **详细信息**: 提取作业的具体要求和描述
+- **截止时间**: 显示作业截止时间
+- **分组标识**: 标识是否为分组作业
+
+### 测试管理
+
+- **测试列表**: 获取可进行的测试
+- **状态显示**: 显示测试状态和可用性
+- **链接生成**: 自动生成测试链接
+
+### 数据提取
+
+系统能够从HTML页面中提取以下信息：
+
+- 作业标题和描述
+- 截止时间
+- 发布人信息
+- 作业要求详情
+- 提交状态
+- 分组信息
 
 ## API 参考
 
-### BUCTClient (主客户端类)
+### BUCTClient 类
 
-BUCTClient 是一个高级封装类，提供了完整的课程平台操作接口。
+#### 主要方法
 
-#### 初始化
-- `BUCTClient(username=None, password=None)`: 创建客户端实例，可立即登录
-- `create_client(username=None, password=None)`: 工厂函数创建客户端
-
-#### 认证管理
-- `login(username, password)`: 登录课程平台，返回布尔值表示成功与否
-- `logout()`: 退出登录，清理会话
-- `get_session()`: 获取底层的 requests.Session 对象
-
-#### 课程相关操作
-- `get_courses()`: 获取所有课程信息
-- `get_pending_tasks()`: 获取待办任务（作业和测试）
-- `get_course_content(course_id)`: 获取指定课程的详细内容
-
-#### 测试相关操作  
-- `get_test_categories()`: 获取测试分类列表
-- `get_tests_by_category(cate_id, **kwargs)`: 按分类获取测试详情
-- `get_available_tests(cate_id, **kwargs)`: 获取可进行的测试
-- `take_test(test_id)`: 开始指定的测试
-- `get_test_results(test_id)`: 获取测试结果
-
-#### 交互式功能
-- `run_interactive()`: 启动交互式命令行界面
-- `display_welcome()`: 显示欢迎信息
-- `display_tasks(tasks)`: 格式化显示待办任务
-- `display_test_details(cate_id="34060")`: 显示测试详细信息
-
-### 便捷函数
-
-库还提供了一系列便捷函数，无需手动管理会话：
-
-- `get_pending_tasks(username, password)`: 快速获取待办任务
-- `get_test_categories(username, password)`: 快速获取测试分类
-- `get_tests_by_category(username, password, cate_id, **kwargs)`: 快速按分类获取测试
-- `get_available_tests(username, password, cate_id, **kwargs)`: 快速获取可用测试
-- `take_test(username, password, test_id)`: 快速开始测试
-- `get_test_results(username, password, test_id)`: 快速获取测试结果
-
-### 底层组件
-
-#### BUCTAuth
-- `login(username, password)`: 登录课程平台
-- `get_session()`: 获取认证后的会话
+- `login(username, password)`: 登录系统
 - `logout()`: 退出登录
-
-#### CourseUtils
-- `get_courses()`: 获取所有课程
 - `get_pending_tasks()`: 获取待办任务
-- `get_course_content(course_id)`: 获取课程内容
+- `get_homework_with_tasks()`: 获取包含详细要求的作业信息
+- `display_tasks(tasks)`: 显示任务列表
+- `display_homework_with_tasks()`: 显示详细作业信息
+- `display_test_details()`: 显示测试详情
+- `run_interactive()`: 运行交互式界面
 
-#### TestUtils
-- `get_test_categories()`: 获取测试分类
-- `get_tests_by_category(cate_id)`: 按分类获取测试
-- `take_test(test_id)`: 开始测试
-- `get_test_results(test_id)`: 获取测试结果
-
-## 异常处理
-
-库提供了详细的异常类型，所有异常都继承自 `BUCTCourseError`：
-
-- `BUCTCourseError`: 基础异常类
-- `LoginError`: 登录相关错误（用户名密码错误等）
-- `NetworkError`: 网络连接错误
-- `ParseError`: 页面解析错误
-
-### 错误处理示例
+#### 返回数据格式
 
 ```python
-from buct_course import BUCTClient, LoginError, NetworkError
-
-try:
-    client = BUCTClient("username", "password")
-    tasks = client.get_pending_tasks()
-    print(tasks)
-except LoginError as e:
-    print(f"登录失败: {e}")
-except NetworkError as e:
-    print(f"网络错误: {e}")
-except Exception as e:
-    print(f"其他错误: {e}")
+# 待办任务格式
+{
+    "success": True,
+    "data": {
+        "homework": [
+            {
+                "course_name": "课程名称",
+                "title": "作业标题",
+                "deadline": "截止时间",
+                "hwtid": "作业ID",
+                "can_submit": True,
+                "is_group": False,
+                "tasks": ["任务要求1", "任务要求2"]
+            }
+        ],
+        "tests": [...],
+        "stats": {
+            "homework_count": 2,
+            "tests_count": 1,
+            "total_count": 3
+        }
+    }
+}
 ```
 
-## 使用示例
+## 注意事项
 
-### 示例1: 完整的任务检查脚本
+1. **网络连接**: 需要能够访问北化课程平台
+2. **登录凭据**: 使用正确的学号和密码
+3. **会话管理**: 系统会自动管理登录会话
+4. **错误处理**: 包含完善的错误处理机制
+5. **数据安全**: 不会存储用户密码
+
+## 故障排除
+
+### 常见问题
+
+1. **登录失败**
+   - 检查学号和密码是否正确
+   - 确认网络连接正常
+   - 检查是否需要验证码
+
+2. **获取数据失败**
+   - 检查登录状态
+   - 确认课程平台可访问
+   - 查看错误日志
+
+3. **解析错误**
+   - 可能是页面结构发生变化
+   - 检查HTML解析逻辑
+
+### 调试模式
+
+可以通过以下方式启用调试信息：
 
 ```python
-from buct_course import BUCTClient
-
-def check_homework_and_tests():
-    # 创建客户端
-    client = BUCTClient("your_username", "your_password")
-    
-    try:
-        # 获取待办任务
-        tasks = client.get_pending_tasks()
-        
-        if tasks["success"]:
-            stats = tasks["data"]["stats"]
-            print(f"📊 发现 {stats['total_count']} 个待办事项:")
-            print(f"  📝 作业: {stats['homework_count']} 个")
-            print(f"  🧪 测试: {stats['tests_count']} 个")
-            
-            # 显示作业详情
-            if tasks['data']['homework']:
-                print("\n🎯 待提交作业:")
-                for hw in tasks['data']['homework']:
-                    print(f"   • {hw['course_name']} (ID: {hw['lid']})")
-            
-            # 显示测试详情
-            if tasks['data']['tests']:
-                print("\n🧪 待提交测试:")
-                for test in tasks['data']['tests']:
-                    print(f"   • {test['course_name']} (ID: {test['lid']})")
-        
-        # 获取测试详细信息
-        client.display_test_details()
-        
-    finally:
-        # 确保退出
-        client.logout()
-
-if __name__ == "__main__":
-    check_homework_and_tests()
+import logging
+logging.basicConfig(level=logging.DEBUG)
 ```
 
-### 示例2: 自动化测试监控
+## 开发说明
 
-```python
-from buct_course import BUCTClient
-import time
+### 扩展功能
 
-def monitor_tests(username, password, check_interval=3600):
-    """定时监控测试状态"""
-    client = BUCTClient(username, password)
-    
-    while True:
-        try:
-            # 获取可用测试
-            available_tests = client.get_available_tests("34060")
-            
-            if available_tests["success"] and available_tests["data"]["tests"]:
-                print(f"🎯 发现 {len(available_tests['data']['tests'])} 个可进行测试!")
-                for test in available_tests["data"]["tests"]:
-                    print(f"   • {test['title']} (截止: {test.get('deadline', '未知')})")
-            
-            # 等待下次检查
-            time.sleep(check_interval)
-            
-        except KeyboardInterrupt:
-            print("\n👋 监控已停止")
-            break
-        except Exception as e:
-            print(f"❌ 监控出错: {e}")
-            time.sleep(300)  # 出错后等待5分钟再试
-    
-    client.logout()
-```
+要添加新功能，可以：
+
+1. 在相应的工具类中添加方法
+2. 在客户端类中添加接口
+3. 更新显示逻辑
+
+### 贡献代码
+
+欢迎提交Pull Request来改进项目。
 
 ## 许可证
 
-MIT License
+本项目仅供学习和个人使用。
 
-## 免责声明
+## 更新日志
 
-本库仅供学习和技术研究使用，请遵守学校相关规定，合理使用自动化工具。严禁用于任何违反学校规定或违法的用途。使用本库产生的一切后果由使用者自行承担。
+### v1.0.0
+- 基本的登录和数据获取功能
+- 作业和测试信息显示
+- 详细作业要求提取
+- 智能过滤和时间管理
