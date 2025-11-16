@@ -77,6 +77,8 @@ class BUCTAuth:
     def logout(self):
         """注销登录"""
         # 清空session
+        logout_url = "https://portal.buct.edu.cn/cas/logout"
+        self.session.get(logout_url,timeout=10)
         self.session = requests.Session()
         self._is_logged_in = False
         

@@ -1,12 +1,12 @@
 """
 北化课程平台测试工具模块
-提供测试相关的功能
 """
 
 import requests
-import datetime
 from bs4 import BeautifulSoup
 from .exceptions import NetworkError, ParseError
+from .lid_utils import LidUtils
+
 
 class TestUtils:
     """北化课程平台测试工具类"""
@@ -20,294 +20,308 @@ class TestUtils:
         """
         self.session = session
         self.base_url = "https://course.buct.edu.cn"
-        # 需要过滤掉的测试ID列表
-        self.excluded_test_ids = ['27215', '24199']
+        self.lid_utils = LidUtils(session)
     
-    def _generate_class_selection(self, order: int):
-        """生成CSS类选择器"""
-        return f"classicLook{order}"
-    
-    def _get_test_info_from_soup(self, soup, order: int):
+    def get_pending_tests(self):
         """
-        从BeautifulSoup对象中提取测试信息
+        获取待提交测试列表
+        
+        Returns:
+            list: 待提交测试的课程信息列表
+            [{'course_name': str, 'lid': str, 'url': str}, ...]
+        """
+        return self.lid_utils.get_test_lids()
+    
+    def get_test_list(self, lid):
+        """
+        获取指定课程的测试列表
         
         Args:
-            soup: BeautifulSoup对象
-            order: CSS类序号
+            lid: 课程ID
             
         Returns:
-            dict: 测试信息字典
+            dict: 包含测试列表的详细信息
         """
-        class_name = self._generate_class_selection(order)
-        cells = soup.select(f'td.{class_name}')
-        
-        if not cells:
-            return {"state": 0}
-        
-        title = cells[0].get_text(strip=True) if cells[0].text else ""
-        date = cells[1].get_text(strip=True) if len(cells) > 1 and cells[1].text else ""
-        deadline = cells[2].get_text(strip=True) if len(cells) > 2 and cells[2].text else ""
-        
-        # 提取更多详细信息
-        test_status = cells[3].get_text(strip=True) if len(cells) > 3 else ""
-        test_type = cells[4].get_text(strip=True) if len(cells) > 4 else ""
-        
-        # 检查是否有进行测试的图标
-        img_tag = cells[-3].find('img', src="../../../../styles/default/image/go.gif")
-        state = 1 if img_tag else 0
-        
-        # 尝试提取测试链接
-        test_link = None
-        if state == 1 and img_tag and img_tag.find_parent('a'):
-            a_tag = img_tag.find_parent('a')
-            href = a_tag.get('href', '')
-            # 从链接中提取cateId参数
-            cate_id = None
-            if 'cateId=' in href:
-                cate_id = href.split('cateId=')[1].split('&')[0] if '&' in href.split('cateId=')[1] else href.split('cateId=')[1]
-            
-            # 使用标准的测试列表URL格式
-            test_link = (
+        try:
+            test_url = (
                 f"{self.base_url}/meol/common/question/test/student/list.jsp?"
                 f"sortColumn=createTime&status=1&tagbug=client&"
-                f"sortDirection=-1&strStyle=lesson19&cateId={cate_id or '34060'}&"
+                f"sortDirection=-1&strStyle=lesson19&cateId={lid}&"
                 f"pagingPage=1&pagingNumberPer=7"
             )
-        
-        return {
-            "title": title,
-            "date": date,
-            "deadline": deadline,
-            "status_text": test_status,
-            "type": test_type,
-            "state": state,
-            "test_link": test_link,
-            "can_take_test": state == 1
-        }
-    
-    def get_tests_by_category(self, cate_id: str, paging_page: int = 1, paging_number_per: int = 7, excluded_ids=None):
-        """
-        根据分类ID获取测试列表
-        
-        Args:
-            cate_id: 分类ID
-            paging_page: 页码
-            paging_number_per: 每页数量
-            excluded_ids: 需要排除的测试ID列表
             
-        Returns:
-            list: 测试信息列表
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+                "Referer": f"{self.base_url}/meol/jpk/course/layout/newpage/index.jsp?courseId={lid}",
+                "Origin": self.base_url
+            }
             
-        Raises:
-            NetworkError: 网络请求错误
-            ParseError: 解析错误
-        """
-        if excluded_ids is None:
-            excluded_ids = ['27215', '24199']  # 默认过滤掉这些ID
-        try:
-            url = (
-                f"{self.base_url}/meol/common/question/test/student/list.jsp?"
-                f"sortColumn=createTime&pagingNumberPer={paging_number_per}&status=1&"
-                f"tagbug=client&sortDirection=-1&strStyle=lesson19&cateId={cate_id}&"
-                f"pagingPage={paging_page}&"
-            )
-            
-            response = self.session.get(url, timeout=10)
+            response = self.session.get(test_url, headers=headers, timeout=10)
             response.raise_for_status()
             
-            # 处理GBK编码
-            content = response.content.decode('gbk')
-            soup = BeautifulSoup(content, 'html.parser')
+            soup = BeautifulSoup(response.text, "html.parser")
             
-            tests_list = []
-            
-            # 提取多个classicLook类别的测试信息
-            for order in range(8):  # 通常有0-7个classicLook类别
-                test_info = self._get_test_info_from_soup(soup, order)
-                # 添加更多详细信息
-                test_info.update({
-                    "cate_id": cate_id,
-                    "order": order,
-                    "class_name": self._generate_class_selection(order)
-                })
-                tests_list.append(test_info)
-            
-            # 过滤掉指定ID的测试（如果cate_id在排除列表中）
-            if cate_id in excluded_ids:
-                tests_list = []  # 完全过滤掉该分类的所有测试
-            
-            # 过滤掉不可进行的测试（can_take_test为False的测试）
-            tests_list = [test for test in tests_list if test.get('can_take_test', False)]
-            
-            # 返回完整的JSON响应
-            return {
-                "success": True,
-                "data": {
-                    "tests": tests_list,
-                    "stats": {
-                        "total_tests": len(tests_list),
-                        "available_tests": len([t for t in tests_list if t.get("state") == 1]),
-                        "completed_tests": len([t for t in tests_list if t.get("state") == 0])
-                    },
-                    "pagination": {
-                        "page": paging_page,
-                        "per_page": paging_number_per,
-                        "total_pages": 1  # 需要根据实际分页信息实现
-                    },
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "source_url": url
-                }
-            }
+            return self._parse_test_table(soup, lid)
             
         except requests.exceptions.RequestException as e:
             raise NetworkError(f"获取测试列表失败: {str(e)}")
         except Exception as e:
             raise ParseError(f"解析测试列表失败: {str(e)}")
     
-    def get_available_tests(self, cate_id: str, **kwargs):
+    def get_test_detail(self, test_id):
         """
-        获取可用的测试（状态为1的测试）
-        
-        Args:
-            cate_id: 分类ID
-            **kwargs: 传递给get_tests_by_category的参数
-            
-        Returns:
-            dict: 包含可用测试的JSON响应
-        """
-        result = self.get_tests_by_category(cate_id, **kwargs)
-        if result["success"]:
-            available_tests = [test for test in result["data"]["tests"] if test.get("state") == 1]
-            result["data"]["tests"] = available_tests
-            result["data"]["stats"]["available_tests"] = len(available_tests)
-        return result
-    
-    def get_test_categories(self):
-        """
-        获取测试分类列表
-        
-        Note: 需要根据实际页面结构实现
-        """
-        # 这里可以实现获取所有测试分类的逻辑
-        # 返回格式: [{"id": "分类ID", "name": "分类名称"}, ...]
-        return []
-    
-    def take_test(self, test_id: str):
-        """
-        开始进行测试
-        
-        Args:
-            test_id: 测试ID
-            
-        Note: 需要根据实际测试流程实现
-        """
-        # 这里可以实现开始测试的逻辑
-        pass
-    
-    def get_test_categories(self):
-        """
-        获取测试分类列表
-        
-        Returns:
-            dict: 包含测试分类信息的JSON响应
-        """
-        try:
-            # 这里需要根据实际页面结构实现获取分类的逻辑
-            # 示例返回一些常见的分类
-            categories = [
-                {"id": "34060", "name": "常规测试", "description": "常规课程测试"},
-                {"id": "34061", "name": "期中测试", "description": "期中考试"},
-                {"id": "34062", "name": "期末测试", "description": "期末考试"},
-                {"id": "34063", "name": "平时测验", "description": "平时小测验"}
-            ]
-            
-            return {
-                "success": True,
-                "data": {
-                    "categories": categories,
-                    "timestamp": datetime.datetime.now().isoformat()
-                }
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"获取测试分类失败: {str(e)}",
-                "timestamp": datetime.datetime.now().isoformat()
-            }
-    
-    def take_test(self, test_id: str):
-        """
-        开始进行测试
+        获取单个测试的详细信息
         
         Args:
             test_id: 测试ID
             
         Returns:
-            dict: 包含测试开始信息的JSON响应
+            dict: 测试详细信息
         """
         try:
-            # 这里需要根据实际测试流程实现
-            # 示例返回信息
-            return {
-                "success": True,
-                "data": {
-                    "test_id": test_id,
-                    "message": "测试开始功能待实现",
-                    "test_url": f"{self.base_url}/meol/common/question/test/student/taketest.jsp?testId={test_id}",
-                    "timestamp": datetime.datetime.now().isoformat()
-                }
+            detail_url = f"{self.base_url}/meol/common/question/test/student/view.jsp?testId={test_id}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+                "Referer": f"{self.base_url}/meol/common/question/test/student/list.jsp"
             }
             
+            response = self.session.get(detail_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            return self._parse_test_detail(soup, test_id)
+            
+        except requests.exceptions.RequestException as e:
+            raise NetworkError(f"获取测试详情失败: {str(e)}")
         except Exception as e:
-            return {
-                "success": False,
-                "error": f"开始测试失败: {str(e)}",
-                "timestamp": datetime.datetime.now().isoformat()
-            }
+            raise ParseError(f"解析测试详情失败: {str(e)}")
     
-    def get_test_results(self, test_id: str):
+    def filter_tests(self, test_courses):
         """
-        获取测试结果
+        过滤测试列表，移除不需要的项目
         
         Args:
-            test_id: 测试ID
+            test_courses: 原始测试课程列表
             
         Returns:
-            dict: 包含测试结果的JSON响应
+            list: 过滤后的测试课程列表
         """
-        try:
-            # 这里需要根据实际页面结构实现
-            return {
-                "success": True,
-                "data": {
-                    "test_id": test_id,
-                    "score": "待获取",
-                    "status": "completed",
-                    "details": "测试结果获取功能待实现",
-                    "timestamp": datetime.datetime.now().isoformat()
-                }
-            }
+        filtered_tests = []
+        
+        for course in test_courses:
+            course_name = course.get('course_name', '')
             
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"获取测试结果失败: {str(e)}",
-                "timestamp": datetime.datetime.now().isoformat()
-            }
+            # 过滤逻辑：移除汇总信息和无效项目
+            if (course.get('lid') and 
+                not ('门课程' in course_name and '待提交' in course_name) and
+                not course_name.strip() == ''):
+                
+                filtered_tests.append(course)
+        
+        return filtered_tests
     
-    def filter_tests(self, tests_list):
+    def filter_available_tests(self, test_list):
         """
-        过滤测试列表，移除被排除的测试ID
+        过滤测试列表，只保留可以进行的测试
         
         Args:
-            tests_list: 测试列表
+            test_list: 测试详情列表
             
         Returns:
-            list: 过滤后的测试列表
+            list: 只包含可进行测试的列表
         """
-        return [test for test in tests_list if test.get('lid') not in self.excluded_test_ids]
+        available_tests = []
+        
+        for test in test_list:
+            # 只保留可以开始的测试
+            if test.get('can_start', False):
+                available_tests.append(test)
+        
+        return available_tests
     
-    def set_base_url(self, base_url):
-        """设置基础URL（用于测试或其他环境）"""
-        self.base_url = base_url.rstrip('/')
+    def _parse_test_table(self, soup, lid):
+        """解析测试列表表格"""
+        test_list = []
+        course_name = "未知课程"
+        
+        # 尝试从页面中获取课程名称
+        title_elem = soup.find('title')
+        if title_elem:
+            title_text = title_elem.get_text(strip=True)
+            if '测试' in title_text:
+                # 提取课程名称，通常在标题中
+                course_name = title_text.replace('测试', '').strip()
+        
+        # 查找测试列表表格
+        table = soup.find('table', class_='valuelist')
+        if not table:
+            # 尝试其他可能的表格选择器
+            table = soup.find('table', {'border': '0', 'cellspacing': '0', 'cellpadding': '0'})
+        
+        if table:
+            rows = table.find_all('tr')[1:]  # 跳过表头
+            
+            for row in rows:
+                test_info = self._parse_test_row(row)
+                if test_info:
+                    test_list.append(test_info)
+        
+        return {
+            "course_name": course_name,
+            "lid": lid,
+            "test_list": test_list,
+            "total_count": len(test_list)
+        }
+    
+    def _parse_test_row(self, row):
+        """解析单行测试信息"""
+        test_info = {}
+        cells = row.find_all('td')
+        
+        if len(cells) < 8:  # 根据提供的HTML，测试表格有8列
+            return None
+        
+        # 第1列：测试标题（包含图标和标题文本）
+        title_cell = cells[0]
+        # 提取纯文本标题，去除图标
+        title_text = title_cell.get_text(strip=True)
+        test_info['title'] = title_text
+        
+        # 第2列：开始时间
+        test_info['start_time'] = cells[1].get_text(strip=True)
+        
+        # 第3列：截止时间
+        test_info['end_time'] = cells[2].get_text(strip=True)
+        
+        # 第4列：允许测试次数
+        test_info['allowed_attempts'] = cells[3].get_text(strip=True)
+        
+        # 第5列：限制用时（分钟）
+        test_info['duration'] = cells[4].get_text(strip=True)
+        
+        # 第6列：开始测试（检查是否有开始测试的链接）
+        start_test_cell = cells[5]
+        start_link = start_test_cell.find('a')
+        if start_link and start_link.get('onclick'):
+            # 从onclick属性中提取测试ID
+            onclick_attr = start_link.get('onclick', '')
+            if 'gotostart(' in onclick_attr:
+                # 提取测试ID，格式如：gotostart('128089186','client','lesson19')
+                import re
+                match = re.search(r"gotostart\('(\d+)'", onclick_attr)
+                if match:
+                    test_info['test_id'] = match.group(1)
+                    test_info['can_start'] = True
+                    # 构造开始测试的href（虽然原始是###，但我们有test_id）
+                    test_info['start_href'] = f"#start_test_{test_info['test_id']}"
+                else:
+                    test_info['can_start'] = False
+            else:
+                test_info['can_start'] = False
+        else:
+            test_info['can_start'] = False
+        
+        # 第7列：交卷状态
+        submit_cell = cells[6]
+        submit_text = submit_cell.get_text(strip=True)
+        test_info['submit_status'] = submit_text if submit_text != '&nbsp;' else ''
+        
+        # 第8列：查看结果（检查是否已完成测试）
+        result_cell = cells[7]
+        result_link = result_cell.find('a')
+        if result_link:
+            test_info['result_href'] = result_link.get('href', '')
+            test_info['has_result'] = True
+            # 如果有查看结果链接，说明测试已完成
+            test_info['status'] = '已完成'
+        else:
+            test_info['has_result'] = False
+            # 根据是否能开始测试来判断状态
+            if test_info.get('can_start', False):
+                test_info['status'] = '可进行'
+            else:
+                test_info['status'] = '未开始'
+        
+        return test_info
+    
+    def display_test_details(self, tests, course_name):
+        """
+        显示测试详细信息，格式与作业保持一致
+        
+        Args:
+            tests: 测试列表
+            course_name: 课程名称
+        """
+        if not tests:
+            print("📭 暂无可进行的测试")
+            return
+        
+        for idx, test in enumerate(tests, 1):
+            print(f"🧪 测试 {idx}: {test.get('title', '无标题')}")
+            # 优先使用测试自带的课程名称，否则使用传入的课程名称
+            test_course_name = test.get('course_name', course_name or '未知课程')
+            print(f"📚 课程: {test_course_name}")
+            # 兼容两种字段名：end_time（原始数据）和 deadline（格式化数据）
+            deadline = test.get('deadline') or test.get('end_time', '未知')
+            print(f"⏰ 截止时间: {deadline}")
+            
+            # 显示开始测试链接
+            # 兼容两种数据格式：原始数据和格式化数据
+            if test.get('test_link'):
+                # 格式化数据中已经有构建好的链接
+                print(f"🔗 开始测试: {test['test_link']}")
+            elif test.get('can_start') and test.get('test_id'):
+                # 原始数据需要构建链接
+                test_url = f"https://course.buct.edu.cn/meol/common/question/test/student/test_start.jsp?testId={test['test_id']}"
+                print(f"🔗 开始测试: {test_url}")
+            
+            print("-" * 50)
+    
+    def _parse_test_detail(self, soup, test_id):
+        """解析测试详情页面"""
+        detail_info = {
+            "test_id": test_id,
+            "title": "",
+            "description": "",
+            "start_time": "",
+            "end_time": "",
+            "duration": "",
+            "total_score": "",
+            "question_count": "",
+            "instructions": "",
+            "test_url" : f"https://course.buct.edu.cn/meol/common/question/test/student/test_start.jsp?testId={test_id}"
+        }
+        
+        # 测试标题
+        title_elem = soup.find('h1') or soup.find('h2') or soup.find('h3')
+        if title_elem:
+            detail_info['title'] = title_elem.get_text(strip=True)
+        
+        # 测试描述和说明
+        content_div = soup.find('div', class_='content') or soup.find('div', class_='description')
+        if content_div:
+            detail_info['description'] = content_div.get_text(strip=True)
+        
+        # 查找测试信息表格
+        info_table = soup.find('table', class_='info')
+        if info_table:
+            rows = info_table.find_all('tr')
+            for row in rows:
+                cells = row.find_all(['td', 'th'])
+                if len(cells) >= 2:
+                    key = cells[0].get_text(strip=True)
+                    value = cells[1].get_text(strip=True)
+                    
+                    if '开始时间' in key:
+                        detail_info['start_time'] = value
+                    elif '结束时间' in key:
+                        detail_info['end_time'] = value
+                    elif '持续时间' in key or '考试时长' in key:
+                        detail_info['duration'] = value
+                    elif '总分' in key:
+                        detail_info['total_score'] = value
+                    elif '题目数' in key or '问题数' in key:
+                        detail_info['question_count'] = value
+        
+        return detail_info

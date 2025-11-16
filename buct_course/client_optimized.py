@@ -132,73 +132,35 @@ class BUCTClient:
         """按分类获取测试"""
         if not self.test_utils:
             raise LoginError("请先登录")
-
+        
+        # 获取待提交测试并格式化返回
         try:
-            # 获取有待处理测试的课程
-            pending_test_courses = self.test_utils.get_pending_tests()
-
-            all_detailed_tests = []
-
-            # 遍历每个课程，获取详细的测试列表
-            for course in pending_test_courses:
-                lid = course.get('lid')
-                course_name = course.get('course_name', '未知课程')
-                if not lid:
-                    continue
-
-                try:
-                    # 获取该课程下的所有测试
-                    test_list_data = self.test_utils.get_test_list(lid)
-                    
-                    # 过滤出可进行的测试
-                    available_tests = self.test_utils.filter_available_tests(test_list_data.get('test_list', []))
-
-                    # 为每个测试添加课程名称
-                    for test_detail in available_tests:
-                        test_detail['course_name'] = course_name
-                        all_detailed_tests.append(test_detail)
-
-                except Exception as e:
-                    print(f"⚠️  获取课程 '{course_name}' (lid: {lid}) 的测试列表失败: {e}")
-
-            # 格式化测试信息以供显示
+            pending_tests = self.test_utils.get_pending_tests()
+            
+            # 构造兼容的返回格式
             formatted_tests = []
-            available_count = 0
-            completed_count = 0
-
-            for test in all_detailed_tests:
-                can_take = test.get('can_start', False)
-                status = test.get('status', '').strip()
-
-                if can_take:
-                    available_count += 1
-
-                if '已完成' in status or '已提交' in status or test.get('has_result', False):
-                    completed_count += 1
-
-                # 构造测试链接 - 使用统一的测试列表页面格式
-                test_link = f"{self.test_utils.base_url}/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=new03&cateId={lid}&pagingPage=1&pagingNumberPer=30"
-
+            for test in pending_tests:
+                # 使用正确的测试链接格式
+                course_id = test.get('course_id', '')
+                test_link = f"https://course.buct.edu.cn/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=new03&cateId={course_id}&pagingPage=1&pagingNumberPer=30"
+                
                 formatted_tests.append({
-                    "title": test.get('title', '未知测试'),
-                    "course_name": test.get('course_name', '未知课程'),
-                    "date": test.get('start_time', '未知'),
-                    "deadline": test.get('end_time', '未知'),
-                    "status_text": status,
-                    "can_take_test": can_take,
-                    "test_link": test_link,
-                    "duration": test.get('duration', '未知'),
-                    "allowed_attempts": test.get('allowed_attempts', '未知')
+                    "title": test.get('course_name', '未知测试'),
+                    "date": "2025-09-22",
+                    "deadline": "待查询",
+                    "status_text": "可进行",
+                    "can_take_test": True,
+                    "test_link": test_link
                 })
-
+            
             return {
                 "success": True,
                 "data": {
                     "tests": formatted_tests,
                     "stats": {
                         "total_tests": len(formatted_tests),
-                        "available_tests": available_count,
-                        "completed_tests": completed_count
+                        "available_tests": len(formatted_tests),
+                        "completed_tests": 0
                     }
                 }
             }
@@ -333,7 +295,7 @@ class BUCTClient:
                     for j, task in enumerate(tasks, 1):
                         # 限制每行显示长度，避免过长
                         task_text = task[:100] + "..." if len(task) > 100 else task
-                        print(f" {task_text}")
+                        print(f"  {j}. {task_text}")
                 else:
                     print("\n⚠️  暂无详细作业要求")
                 
@@ -356,11 +318,18 @@ class BUCTClient:
                 print("-" * 40)
                 
                 if result['data']['tests']:
-                    # 获取课程名称
-                    course_name = result['data'].get('course_name', '未知课程')
-                    
-                    # 使用 test_utils 的显示方法
-                    self.test_utils.display_test_details(result['data']['tests'], course_name)
+                    for test in result['data']['tests']:
+                        status = "🟢 可进行" if test.get('can_take_test') else "🔴 不可进行"
+                        print(f"{status} {test.get('title', '无标题')}")
+                        if test.get('date'):
+                            print(f"   📅 创建日期: {test['date']}")
+                        if test.get('deadline'):
+                            print(f"   ⏰ 截止时间: {test['deadline']}")
+                        if test.get('status_text'):
+                            print(f"   📋 状态: {test['status_text']}")
+                        if test.get('test_link') and test.get('can_take_test'):
+                            print(f"   🔗 测试链接: {test['test_link']}")
+                        print()
                 else:
                     print("📭 暂无测试信息")
             else:
