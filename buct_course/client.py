@@ -24,6 +24,13 @@ class BUCTClient:
         self.password = password
         
         try:
+            # 如果之前有登录过，先清理旧的状态
+            if self.auth and self.auth.is_logged_in():
+                self.logout()
+
+            # 重新创建auth对象，确保使用全新的session
+            self.auth = BUCTAuth()
+
             if self.auth.login(username, password):
                 self.session = self.auth.get_session()
                 self.course_utils = CourseUtils(self.session)

@@ -33,7 +33,11 @@ class LidUtils:
         """
         try:
             url = f"{self.base_url}/meol/welcomepage/student/interaction_reminder_v8.jsp"
-            resp = self.session.get(url, timeout=10)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+                "Referer": f"{self.base_url}/meol/homepage/student/index.jsp",
+            }
+            resp = self.session.get(url, headers=headers, timeout=10)
             resp.raise_for_status()
             
             soup = BeautifulSoup(resp.text, "html.parser")
@@ -97,7 +101,10 @@ class LidUtils:
         """
         try:
             url = f"{self.base_url}/meol/homepage/student/index.jsp"
-            response = self.session.get(url, timeout=10)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+            }
+            response = self.session.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, "html.parser")
