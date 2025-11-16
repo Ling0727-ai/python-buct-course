@@ -1,0 +1,6 @@
+dist/
+buct_course.egg-info/
+__pycache__/
+*.pyc
+.idea/
+.venv/

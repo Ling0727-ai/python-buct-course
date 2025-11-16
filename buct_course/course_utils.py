@@ -1,6 +1,7 @@
 """
 北化课程平台作业解析工具模块
 """
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -51,7 +52,9 @@ class CourseUtils:
             
             main_res = self.session.get(course_main_url, headers=headers, timeout=10)
             main_res.raise_for_status()
-            
+            # 添加短暂延迟，让服务器处理完请求
+            time.sleep(0.3)
+
             main_soup = BeautifulSoup(main_res.text, "html.parser")
             
             # 查找作业相关链接
@@ -80,6 +83,8 @@ class CourseUtils:
             
             # 访问作业页面
             headers["Referer"] = course_main_url
+            # 添加短暂延迟，避免请求过快
+            time.sleep(0.5)
             hw_res = self.session.get(homework_url, headers=headers, timeout=10)
             hw_res.raise_for_status()
             
@@ -108,6 +113,8 @@ class CourseUtils:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
                 "Referer": f"{self.base_url}/meol/common/hw/student/hwtask.jsp?tagbug=client&strStyle=new03"
             }
+            # 添加短暂延迟，避免请求过快
+            time.sleep(0.3)
             res = self.session.get(detail_url, headers=headers, timeout=10)
             res.raise_for_status()
             
@@ -122,6 +129,8 @@ class CourseUtils:
     
     def _parse_homework_table(self, soup, lid):
         """解析作业列表表格"""
+        # 添加短暂延迟，确保内容完全加载
+        time.sleep(0.5)
         homework_list = []
         table = soup.find('table', class_='valuelist')
         
@@ -131,7 +140,7 @@ class CourseUtils:
                 homework_info = self._parse_homework_row(row)
                 if homework_info:
                     homework_list.append(homework_info)
-        
+
         return {
             "lid": lid, 
             "homework_list": homework_list,
@@ -271,7 +280,9 @@ class CourseUtils:
                 full_url = f"{self.base_url}{url}"
             else:
                 full_url = url
-                
+
+            # 添加短暂延迟，避免请求过快
+            time.sleep(0.3)
             res = self.session.get(full_url, headers=headers, timeout=10)
             res.raise_for_status()
             
@@ -414,6 +425,9 @@ class CourseUtils:
                 homework_details['urgent_count'] = urgent_count
                 all_homework_details.append(homework_details)
                 
+                # 添加延迟，避免批量请求过快
+                time.sleep(0.8)
+
             except Exception as e:
                 print(f"获取课程 {course_name} (LID: {lid}) 的作业详情失败: {str(e)}")
                 continue
