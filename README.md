@@ -259,6 +259,9 @@ python-buct-course/
 
 这是优化后的客户端，提供更简洁的API和更好的性能。
 
+> ℹ️ `BUCTCourseClient` 是 `buct_course.client_optimized.BUCTClient` 的**别名**，为兼容早期文档中的写法而保留。
+> 包根直接导出的 `BUCTClient` 来自 `buct_course.client`。两者目前公开方法完全一致。
+
 #### 初始化
 
 ```python
@@ -583,3 +586,7 @@ logging.basicConfig(level=logging.DEBUG)
 - 修复 `example/` 中把 `login()` 的返回值当成 session 使用的错误写法
 - 打包收窄：wheel 只包含 `buct_course`，不再把 `example/`、`test/` 装成顶层包
 - 统一版本号来源（`pyproject.toml` / `setup.py` / `__init__.py` / `uv.lock` 此前不一致）
+
+### v1.4.1
+- 新增 `BUCTCourseClient` 别名（指向 `client_optimized.BUCTClient`），修复文档中该名字不存在导致的 `ImportError`
+- README 补充别名说明

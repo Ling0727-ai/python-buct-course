@@ -8,11 +8,15 @@ from .course_utils import CourseUtils
 from .test_utils import TestUtils
 from .exceptions import BUCTCourseError, LoginError, NetworkError, ParseError
 from .client import BUCTClient, create_client
+from .client_optimized import BUCTClient as BUCTCourseClient
 
-__version__ = "1.4.0"
+# ``BUCTCourseClient`` 是 ``client_optimized.BUCTClient`` 的别名，保留这个名字是因为
+# 早期文档一直以它作为「推荐使用」的客户端名。两者目前公开方法完全一致，
+# ``BUCTClient``（本模块导出的那个）来自 ``client.py``。
+__version__ = "1.4.1"
 __all__ = [
-    'BUCTAuth', 'CourseUtils', 'TestUtils', 'BUCTClient', 'create_client',
-    'BUCTCourseError', 'LoginError', 'NetworkError', 'ParseError'
+    'BUCTAuth', 'CourseUtils', 'TestUtils', 'BUCTClient', 'BUCTCourseClient',
+    'create_client', 'BUCTCourseError', 'LoginError', 'NetworkError', 'ParseError'
 ]
 
 # 提供便捷的导入方式
