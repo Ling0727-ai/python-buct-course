@@ -14,7 +14,9 @@ from buct_course.auth import BUCTAuth
 def main():
     # 1. 登录
     auth = BUCTAuth()
-    session = auth.login("your_username", "your_password")
+    if not auth.login("your_username", "your_password"):
+        raise SystemExit("登录失败，请检查用户名和密码")
+    session = auth.get_session()
     
     # 2. 获取测试课程 LID
     lid_utils = LidUtils(session)
@@ -58,7 +60,9 @@ def main():
 def get_specific_course_tests():
     """根据课程名称获取测试"""
     auth = BUCTAuth()
-    session = auth.login("your_username", "your_password")
+    if not auth.login("your_username", "your_password"):
+        raise SystemExit("登录失败，请检查用户名和密码")
+    session = auth.get_session()
     
     lid_utils = LidUtils(session)
     test_utils = TestUtils(session)

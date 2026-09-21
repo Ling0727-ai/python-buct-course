@@ -2,3 +2,6 @@ include LICENSE
 include README.md
 include pyproject.toml
 recursive-include buct_course *.py
+# example/ 与 test/ 只随 sdist 分发供查阅，不进 wheel（见 pyproject 的 packages）
+recursive-include example *.py
+recursive-include test *.py

@@ -1,18 +1,18 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
     name="buct-course",
-    version="1.3.0",
+    version="1.4.0",
     author="LingXin07",
     author_email="ling1163840260@gmail.com",
     description="北京化工大学课程平台作业查询",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Ling0727-ai/python-buct-course",
-    packages=find_packages(),
+    packages=["buct_course"],
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Education",

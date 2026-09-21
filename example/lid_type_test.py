@@ -74,7 +74,9 @@ def main():
     try:
         # 1. 登录
         auth = BUCTAuth()
-        session = auth.login("your_username", "your_password")
+        if not auth.login("your_username", "your_password"):
+            raise SystemExit("登录失败，请检查用户名和密码")
+        session = auth.get_session()
         
         # 2. 获取 LID 工具
         lid_utils = LidUtils(session)
