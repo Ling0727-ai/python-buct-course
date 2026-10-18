@@ -1,2 +1,3 @@
 requests
-beatifulsoup4
+beautifulsoup4
+pycryptodome

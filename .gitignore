@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .idea/
 .venv/
+# Local investigation scratch files (never package or commit sessions).
+/work/

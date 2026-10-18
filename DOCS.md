@@ -21,6 +21,10 @@
 
 **适合**: 想要快速上手的新用户
 
+## 栏目抓取改进
+
+- [SCRAPING.md](<SCRAPING.md>)：纯 HTTP 自动发现作业/测试栏目、特殊链接、分页、使用示例与离线测试。
+
 ## 🔧 技术文档
 
 ### [DEBUGGING_NOTES.md](DEBUGGING_NOTES.md) - 调试说明

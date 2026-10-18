@@ -2,11 +2,14 @@
 北化课程平台作业解析工具模块
 """
 import time
+from datetime import datetime
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
 from .exceptions import NetworkError, ParseError
 from .lid_utils import LidUtils
+from .course_pages import CoursePages
 
 
 class CourseUtils:
@@ -33,114 +36,28 @@ class CourseUtils:
         """
         return self.lid_utils.get_homework_lids()
 
-    def get_course_details(self, lid):
-        """
-        获取课程作业列表信息
+    def get_course_details(self, lid, url=None):
+        """获取所有作业栏目（含私有栏目、嵌套 iframe 和分页）。
 
-        Args:
-            lid: 课程ID
-
-        Returns:
-            dict: 包含课程ID和作业列表的详细信息
+        url 可指定栏目页；默认从课程主页发现。返回已完成/过期作业，
+        仅由 can_submit 表示是否待办，不把抓取成功等同于可以提交。
         """
+        course_url = url or f"{self.base_url}/meol/jpk/course/layout/newpage/index.jsp?courseId={lid}"
+        homework = {}
         try:
-            # 首先访问课程主页，获取作业列表
-            course_main_url = f"{self.base_url}/meol/jpk/course/layout/newpage/index.jsp?courseId={lid}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-            }
+            for source_url, soup in CoursePages(self.session, self.base_url).walk(course_url, kind='homework'):
+                for info in self._parse_homework_page(soup, source_url):
+                    info['lid'] = lid
+                    info['source_url'] = source_url
+                    homework.setdefault(info['hwtid'], info)
+            result = list(homework.values())
+            return {"lid": lid, "homework_list": result, "total_count": len(result)}
+        except requests.exceptions.RequestException as exc:
+            raise NetworkError(f"获取课程详情失败: {exc}") from exc
 
-            main_res = self.session.get(course_main_url, headers=headers, timeout=10)
-            main_res.raise_for_status()
-            # 添加短暂延迟，让服务器处理完请求
-            time.sleep(0.3)
-
-            main_soup = BeautifulSoup(main_res.text, "html.parser")
-
-            # 查找作业相关链接
-            homework_link = None
-            all_links = main_soup.find_all('a', href=True)
-
-            for link in all_links:
-                href = link.get('href')
-                text = link.get_text(strip=True)
-                # print(f"link text: {text}, href: {href}")
-
-                # 匹配包含 course_column_preview_transfer.jsp 且 文本中包含'作业'的链接
-                if 'course_column_preview_transfer.jsp' in href and '作业' in text:
-                    homework_link = href
-                    break
-
-            if not homework_link:
-                # 尝试用特殊方式获取作业
-                special_results = self.get_homework_detail_special1(lid)
-                if special_results:
-                    # 适配标准结构
-                    formatted_hws = []
-                    for hw in special_results:
-                        formatted_hws.append({
-                            'hwtid': hw.get('hwtid', ''),
-                            'title': hw.get('title', ''),
-                            'deadline': hw.get('deadline', ''),
-                            'score': '',
-                            'publisher': '',
-                            'submit_href': hw.get('detail_href', ''),
-                            'can_submit': True,
-                            'is_group': False,
-                            'status': '未知',
-                            'detail_href': hw.get('detail_href', '')
-                        })
-                    return {"lid": lid, "homework_list": formatted_hws, "total_count": len(formatted_hws)}
-                
-                # 如果没找到作业链接，返回空结果
-                return {"lid": lid, "homework_list": [], "total_count": 0}
-
-            # 构造完整的作业页面URL
-            if homework_link.startswith('/'):
-                homework_url = f"{self.base_url}{homework_link}"
-            elif homework_link.startswith('../../'):
-                homework_url = f"{self.base_url}/meol/jpk/course/layout/newpage/{homework_link}"
-            else:
-                homework_url = homework_link
-
-            # ��问作业页面
-            headers["Referer"] = course_main_url
-            # 添加短暂延迟，避免请求过快
-            time.sleep(0.5)
-            hw_res = self.session.get(homework_url, headers=headers, timeout=10)
-            hw_res.raise_for_status()
-
-            hw_soup = BeautifulSoup(hw_res.text, "html.parser")
-
-            result = self._parse_homework_table(hw_soup, lid)
-            
-            # 如果常规方式未解析到任何列表，尝试特殊方式
-            if result.get('total_count', 0) == 0:
-                special_results = self.get_homework_detail_special1(lid)
-                if special_results:
-                    formatted_hws = []
-                    for hw in special_results:
-                        formatted_hws.append({
-                            'hwtid': hw.get('hwtid', ''),
-                            'title': hw.get('title', ''),
-                            'deadline': hw.get('deadline', ''),
-                            'score': '',
-                            'publisher': '',
-                            'submit_href': hw.get('detail_href', ''),
-                            'can_submit': True,
-                            'is_group': False,
-                            'status': '未知',
-                            'detail_href': hw.get('detail_href', '')
-                        })
-                    result['homework_list'] = formatted_hws
-                    result['total_count'] = len(formatted_hws)
-
-            return result
-
-        except requests.exceptions.RequestException as e:
-            raise NetworkError(f"获取课程详情失败: {str(e)}")
-        except Exception as e:
-            raise ParseError(f"解析课程详情失败: {str(e)}")
+    def get_homework_by_url(self, url, lid=None):
+        """直接读取一个栏目/作业列表 URL，不执行提交操作。"""
+        return self.get_course_details(lid, url=url)
 
     def get_homework_detail(self, hwtid):
         """
@@ -173,196 +90,100 @@ class CourseUtils:
             raise ParseError(f"解析作业详情失败: {str(e)}")
 
     def get_homework_detail_special1(self, courseId):
-        """
-        获取单个作业的详细信息（特殊处理版本1）
-        在常规方式无法找到作业时调用，通过遍历栏目获取各项作业。
+        """兼容旧接口：现由统一栏目发现处理，不再丢弃状态字段。"""
+        return self.get_course_details(courseId)['homework_list']
 
-        Args:
-            courseId: 课程ID
+    @staticmethod
+    def _homework_id(href):
+        return parse_qs(urlsplit(href).query).get('hwtid', [''])[0]
 
-        Returns:
-            list: 作业详细信息列表
-        """
-        try:
-            course_main_url = f"{self.base_url}/meol/jpk/course/layout/newpage/index.jsp?courseId={courseId}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-            }
+    @staticmethod
+    def _deadline_open(value):
+        if not value or value.strip() in ('不限', '无限制', '无截止时间'):
+            return True
+        for fmt in ('%Y年%m月%d日 %H:%M:%S', '%Y年%m月%d日 %H:%M',
+                    '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
+            try:
+                deadline = datetime.strptime(value.strip(), fmt)
+                # Windows may not have an IANA timezone database installed.
+                from datetime import timedelta, timezone
+                now = datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
+                return deadline > now
+            except ValueError:
+                continue
+        return False  # Unknown dates must not turn into actionable tasks.
 
-            # 访问课程主页
-            main_res = self.session.get(course_main_url, headers=headers, timeout=10)
-            # print(main_res.text)
-            main_res.raise_for_status()
-            time.sleep(0.5)
+    def _parse_homework_page(self, soup, source_url):
+        result = []
+        for table in soup.find_all('table', class_='valuelist'):
+            fields = {}
+            for row in table.find_all('tr'):
+                labels = row.find_all('th', recursive=False)
+                cells = row.find_all('td', recursive=False)
+                if len(labels) == len(cells) == 1:
+                    fields[labels[0].get_text(strip=True)] = cells[0]
+            if any('标题' in key for key in fields):
+                # Blended single-task layout: properties run vertically.
+                info = {'hwtid': '', 'title': '', 'deadline': '', 'score': '',
+                        'publisher': '', 'submit_href': '', 'result_href': '',
+                        'has_result': False, 'is_group': False}
+                for label, cell in fields.items():
+                    value = cell.get_text(' ', strip=True)
+                    if '标题' in label:
+                        info['title'] = value
+                        title_link = cell.find('a', href=True)
+                        if title_link:
+                            info['hwtid'] = self._homework_id(title_link['href'])
+                            info['detail_href'] = urljoin(source_url, title_link['href'])
+                    elif '截止' in label:
+                        info['deadline'] = value
+                    elif '评分' in label or '分数' in label:
+                        info['score'] = value
+                    elif '发布人' in label:
+                        info['publisher'] = value
+                    elif '提交作业' in label:
+                        link = cell.find('a', href=True)
+                        if link and not self._disabled(link):
+                            info['submit_href'] = urljoin(source_url, link['href'])
+                            info['hwtid'] = self._homework_id(link['href']) or info['hwtid']
+                    elif '查看结果' in label:
+                        link = cell.find('a', href=True)
+                        if link and not self._disabled(link):
+                            info['result_href'] = urljoin(source_url, link['href'])
+                            info['has_result'] = True
+                info['hwtid'] = info['hwtid'] or self._homework_id(source_url)
+                if info['hwtid']:
+                    result.append(self._finish_homework(info, source_url))
+            else:
+                for row in table.find_all('tr'):
+                    info = self._parse_homework_row(row)
+                    if info:
+                        result.append(self._finish_homework(info, source_url))
+        return result
 
-            soup = BeautifulSoup(main_res.text, "html.parser")
+    @staticmethod
+    def _disabled(link):
+        return (link.has_attr('disabled') or link.get('aria-disabled') == 'true'
+                or any('disabled' in cls.lower() for cls in link.get('class', []))
+                or not link.get('href') or link.get('href', '').startswith(('#', 'javascript:')))
 
-            # 提取所有含有href属性且class包含"le2"的<a>标签
-            import urllib.parse
-            links = soup.find_all('a', class_='le2', href=True)
-            # print(f"找到 {len(links)} 个潜在的作业链接")
-            results = []
-
-            for link in links:
-                href = link.get('href')
-                text = link.get_text(strip=True)
-                # print(f"special link text: '{text}', href: '{href}'")
-
-                # 匹配包含 course_column_preview_transfer.jsp 且 文本中包含'作业'的链接
-                if 'course_column_preview_transfer.jsp' in href and '作业' in text:
-                    parsed = urllib.parse.urlparse(href)
-                    query = urllib.parse.parse_qs(parsed.query)
-
-                    if 'columnId' in query:
-                        column_id = query['columnId'][0]
-                        # 组成请求链接
-                        next_url = f"{self.base_url}/meol/buildless/colUrlStuView.do?columnId={column_id}"
-
-                        time.sleep(0.3)
-                        next_res = self.session.get(next_url, headers=headers, timeout=10)
-                        next_res.raise_for_status()
-
-                        # 解析页面内容，因为可能包在一个 iframe 中
-                        page_soup = BeautifulSoup(next_res.text, "html.parser")
-                        iframe = page_soup.find('iframe', id='main-content-two')
-                        if iframe and iframe.get('src'):
-                            iframe_src = iframe.get('src')
-                            if not iframe_src.startswith('http'):
-                                if iframe_src.startswith('/'):
-                                    iframe_src = f"{self.base_url}{iframe_src}"
-                                else:
-                                    iframe_src = f"{self.base_url}/{iframe_src}"
-
-                            time.sleep(0.5)
-                            iframe_res = self.session.get(iframe_src, headers=headers, timeout=10)
-                            iframe_res.raise_for_status()
-                            page_soup = BeautifulSoup(iframe_res.text, "html.parser")
-
-                        # 解析 iframe (hwtask_blended.jsp) 中的竖向属性表格
-                        iframe_table = page_soup.find('table', class_='valuelist')
-                        parsed_hw = False
-
-                        if iframe_table:
-                            # 尝试按竖向表格(单作业任务列表)解析
-                            hw_info = {
-                                'title': text,
-                                'column_id': column_id,
-                                'hwtid': '',
-                                'deadline': '',
-                                'score': '',
-                                'publisher': '',
-                                'submit_href': '',
-                                'can_submit': False,
-                                'is_group': False,
-                                'status': '未知',
-                                'detail_href': '',
-                                'has_result': False,
-                                'result_href': ''
-                            }
-
-                            is_vertical = True
-                            for tr in iframe_table.find_all('tr'):
-                                ths = tr.find_all('th')
-                                tds = tr.find_all('td')
-                                if len(ths) > 1 and len(tds) == 0:
-                                    is_vertical = False
-                                    break
-
-                                if len(ths) == 1 and len(tds) == 1:
-                                    th_text = ths[0].get_text(strip=True)
-                                    td_elem = tds[0]
-                                    td_text = td_elem.get_text(strip=True)
-
-                                    if '标题' in th_text:
-                                        a_tag = td_elem.find('a')
-                                        if a_tag:
-                                            hw_info['title'] = a_tag.get_text(strip=True)
-                                            href = a_tag.get('href', '')
-                                            if 'hwtid=' in href:
-                                                hw_info['hwtid'] = href.split('hwtid=')[1].split('&')[0]
-                                                hw_info['detail_href'] = f"{self.base_url}/meol/common/hw/student/hwtask.view.jsp?hwtid={hw_info['hwtid']}"
-                                    elif '截止时间' in th_text:
-                                        hw_info['deadline'] = td_text
-                                    elif '评分结果' in th_text:
-                                        hw_info['score'] = td_text
-                                    elif '发布人' in th_text:
-                                        hw_info['publisher'] = td_text
-                                    elif '提交作业' in th_text:
-                                        submit_a = td_elem.find('a')
-                                        if submit_a:
-                                            submit_href = submit_a.get('href', '')
-                                            hw_info['submit_href'] = submit_href
-                                            if not hw_info['submit_href'].startswith('http'):
-                                                # 如果是相对链接则拼接
-                                                hw_info['submit_href'] = f"{self.base_url}/meol/common/hw/student/{hw_info['submit_href']}"
-
-                                            # 更新为提交链接里的hwtid（这才是最终我们需要的）
-                                            if 'hwtid=' in submit_href:
-                                                hw_info['hwtid'] = submit_href.split('hwtid=')[1].split('&')[0]
-                                                hw_info['detail_href'] = f"{self.base_url}/meol/common/hw/student/hwtask.view.jsp?hwtid={hw_info['hwtid']}"
-                                    elif '查看结果' in th_text:
-                                        view_a = td_elem.find('a', class_='view')
-                                        if not view_a:
-                                            view_a = td_elem.find('a')
-                                        if view_a:
-                                            hw_info['result_href'] = view_a.get('href', '')
-                                            hw_info['has_result'] = True
-
-                            if is_vertical and hw_info.get('hwtid'):
-                                # 判断是否可以提交
-                                has_submit_link = bool(hw_info['submit_href'])
-                                deadline_str = hw_info['deadline']
-                                is_not_expired = True
-                                if deadline_str:
-                                    try:
-                                        from datetime import datetime
-                                        deadline_dt = datetime.strptime(deadline_str, '%Y年%m月%d日 %H:%M:%S')
-                                        current_time = datetime.now()
-                                        is_not_expired = deadline_dt > current_time
-                                    except ValueError:
-                                        pass
-                                is_not_completed = '暂无分数' in hw_info['score'] or not hw_info['score']
-                                hw_info['can_submit'] = has_submit_link and is_not_expired and is_not_completed
-
-                                parsed_hw = True
-
-                                # 核心修改点：如果没有提交链接，则认为该作业已完成/未布置，不需要放入结果中
-                                if has_submit_link:
-                                    results.append(hw_info)
-
-                            # debug for 补交通道
-                            if column_id == '483338':
-                                print(f"DEBUG info for 483338: is_vertical={is_vertical}, {hw_info}")
-
-                        # 如果竖向表解析失败，兼容常规回退查找 hwtid
-                        if not parsed_hw:
-                            hwtid = None
-                            # 优先找 class="enter" 的 a 标签
-                            a_tag = page_soup.find('a', class_='enter')
-                            if a_tag and a_tag.get('href') and 'hwtid=' in a_tag['href']:
-                                hwtid = a_tag['href'].split('hwtid=')[1].split('&')[0]
-                            else:
-                                # 兼容：直接搜索包含 hwtid= 的任一作业链接
-                                for a in page_soup.find_all('a', href=True):
-                                    if 'hwtid=' in a['href']:
-                                        hwtid = a['href'].split('hwtid=')[1].split('&')[0]
-                                        break
-
-                            if hwtid:
-                                # 像原来那样对详情页进行访问
-                                detail_info = self.get_homework_detail(hwtid)
-                                if not detail_info.get('title'):
-                                    detail_info['title'] = text
-                                detail_info['column_id'] = column_id
-                                detail_info['detail_href'] = f"{self.base_url}/meol/common/hw/student/hwtask.view.jsp?hwtid={hwtid}"
-                                results.append(detail_info)
-
-            return results
-
-        except requests.exceptions.RequestException as e:
-            raise NetworkError(f"获取特殊作业详情失败: {str(e)}")
-        except Exception as e:
-            raise ParseError(f"解析特殊作业详情失败: {str(e)}")
+    def _finish_homework(self, info, source_url):
+        info['detail_href'] = urljoin(source_url, info.get('detail_href') or (
+            f"{self.base_url}/meol/common/hw/student/hwtask.view.jsp?hwtid={info['hwtid']}"
+        ))
+        for field in ('submit_href', 'result_href'):
+            if info.get(field):
+                info[field] = urljoin(source_url, info[field])
+        score = info.get('score', '').strip()
+        completed = info.get('has_result', False) or score not in ('', '暂无分数', '未评分', '暂无成绩')
+        info['can_submit'] = bool(info.get('submit_href')) and not completed and self._deadline_open(info.get('deadline', ''))
+        if completed:
+            info['status'] = '已完成'
+        elif not self._deadline_open(info.get('deadline', '')):
+            info['status'] = '已截止或截止时间未知'
+        else:
+            info['status'] = '未提交' if info['can_submit'] else '不可提交'
+        return info
 
     def _parse_homework_table(self, soup, lid):
         """解析作业列表表格"""
@@ -385,90 +206,32 @@ class CourseUtils:
         }
 
     def _parse_homework_row(self, row):
-        """解析单行作业信息"""
-        homework_info = {}
-        cells = row.find_all('td')
-
-        if len(cells) < 8:
+        """解析标准横表，不将占位行或无作业 ID 的行当作作业。"""
+        cells = row.find_all('td', recursive=False)
+        if len(cells) < 4:
             return None
-
-        # 作业标题和链接
-        title_cell = cells[0]
-        title_link = title_cell.find('a', class_='infolist')
-        if title_link:
-            homework_info['title'] = title_link.get_text(strip=True)
-            detail_href = title_link.get('href', '')
-
-            # 构���完整的详情URL
-            if detail_href.startswith('/'):
-                homework_info['detail_href'] = f"{self.base_url}{detail_href}"
-            elif detail_href.startswith('../../'):
-                homework_info['detail_href'] = f"{self.base_url}/meol/common/hw/student/{detail_href}"
-            elif detail_href.startswith('hwtask.view.jsp'):
-                # 相对路径，需要构造完整URL
-                homework_info['detail_href'] = f"{self.base_url}/meol/common/hw/student/{detail_href}"
-            else:
-                homework_info['detail_href'] = detail_href
-
-            # 提取作业ID
-            if 'hwtid=' in detail_href:
-                homework_info['hwtid'] = detail_href.split('hwtid=')[1].split('&')[0]
-
-        # 分组作业标识
-        group_img = title_cell.find('img', title='分组作业')
-        homework_info['is_group'] = group_img is not None
-
-        # 截止时间、分数、发布人
-        homework_info['deadline'] = cells[1].get_text(strip=True)
-        homework_info['score'] = cells[2].get_text(strip=True)
-        homework_info['publisher'] = cells[3].get_text(strip=True)
-
-        # 提交作业链���
-        submit_cell = cells[5]
-        submit_link = submit_cell.find('a', class_='enter')
-        homework_info['submit_href'] = submit_link.get('href', '') if submit_link else ''
-
-        # 判断是否可以提交（检查���交链接、截止时间和完成状态）
-        deadline_str = homework_info.get('deadline', '')
-        score_text = homework_info.get('score', '')
-
-        # 检查是否有提交链接
-        has_submit_link = submit_link is not None
-
-        # 检查是否已过期
-        is_not_expired = True
-        if deadline_str:
-            try:
-                from datetime import datetime
-                deadline = datetime.strptime(deadline_str, '%Y年%m月%d日 %H:%M:%S')
-                current_time = datetime.now()
-                is_not_expired = deadline > current_time
-            except ValueError:
-                # 如果时间格式解析失败，默认认为未过期
-                is_not_expired = True
-
-        # 检查是否已完成（有分数表示已完成）
-        is_not_completed = not score_text or score_text.strip() == ''
-
-        # 只有同时满足：有提交链接、未过期、未完成 才认为可以提交
-        homework_info['can_submit'] = has_submit_link and is_not_expired and is_not_completed
-
-        # 查看结果链接
-        result_cell = cells[6]
-        result_link = result_cell.find('a', class_='view')
-        homework_info['result_href'] = result_link.get('href', '') if result_link else ''
-        homework_info['has_result'] = result_link is not None
-
-        # 造作业详情链接 - 使用作业查看页面
-        if homework_info['hwtid']:
-            homework_info['detail_href'] = f"https://course.buct.edu.cn/meol/common/hw/student/hwtask.view.jsp?hwtid={homework_info['hwtid']}"
-        else:
-            homework_info['detail_href'] = ''
-
-        if not result_link and '未提交' in result_cell.get_text(strip=True):
-            homework_info['status'] = '未提交'
-
-        return homework_info
+        title = row.select_one('a.infolist[href]')
+        if title is None:
+            title = next((a for a in cells[0].find_all('a', href=True)
+                          if self._homework_id(a['href'])), None)
+        if title is None or not self._homework_id(title['href']):
+            return None
+        info = {'hwtid': self._homework_id(title['href']),
+                'detail_href': title['href'],
+                'title': title.get_text(' ', strip=True),
+                'deadline': cells[1].get_text(' ', strip=True),
+                'score': cells[2].get_text(' ', strip=True),
+                'publisher': cells[3].get_text(' ', strip=True),
+                'is_group': row.find('img', title='分组作业') is not None,
+                'submit_href': '', 'result_href': '', 'has_result': False}
+        submit = row.select_one('a.enter[href]')
+        if submit and not self._disabled(submit):
+            info['submit_href'] = submit['href']
+        result = row.select_one('a.view[href]')
+        if result and not self._disabled(result):
+            info['result_href'] = result['href']
+            info['has_result'] = True
+        return self._finish_homework(info, f'{self.base_url}/meol/common/hw/student/hwtask.jsp')
 
     def _parse_homework_detail(self, soup, hwtid):
         """解析作业详情页面"""

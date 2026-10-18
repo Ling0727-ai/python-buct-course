@@ -163,6 +163,7 @@ class BUCTClient:
                     # 为每个测试添加课程名称
                     for test_detail in available_tests:
                         test_detail['course_name'] = course_name
+                        test_detail['lid'] = lid
                         all_detailed_tests.append(test_detail)
 
                 except Exception as e:
@@ -183,8 +184,11 @@ class BUCTClient:
                 if '已完成' in status or '已提交' in status or test.get('has_result', False):
                     completed_count += 1
 
-                # 构造测试链接 - 使用统一的测试列表页面格式
-                test_link = f"{self.test_utils.base_url}/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=new03&cateId={lid}&pagingPage=1&pagingNumberPer=30"
+                # 优先保留页面真实入口；不可把 columnId/testId 当成课程 ID。
+                test_lid = test.get('lid', '')
+                test_link = test.get('test_link') or test.get('source_url') or (
+                    f"{self.test_utils.base_url}/meol/common/question/test/student/list.jsp?cateId={test_lid}"
+                )
 
                 formatted_tests.append({
                     "title": test.get('title', '未知测试'),
@@ -194,6 +198,9 @@ class BUCTClient:
                     "status_text": status,
                     "can_take_test": can_take,
                     "test_link": test_link,
+                    "test_id": test.get('test_id', ''),
+                    "lid": test_lid,
+                    "source_url": test.get('source_url', test_link),
                     "duration": test.get('duration', '未知'),
                     "allowed_attempts": test.get('allowed_attempts', '未知')
                 })

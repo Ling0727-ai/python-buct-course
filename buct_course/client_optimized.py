@@ -136,43 +136,9 @@ class BUCTClient:
         }
     
     def get_tests_by_category(self, cate_id, **kwargs):
-        """按分类获取测试"""
-        if not self.test_utils:
-            raise LoginError("请先登录")
-        
-        # 获取待提交测试并格式化返回
-        try:
-            pending_tests = self.test_utils.get_pending_tests()
-            
-            # 构造兼容的返回格式
-            formatted_tests = []
-            for test in pending_tests:
-                # 使用正确的测试链接格式
-                course_id = test.get('course_id', '')
-                test_link = f"https://course.buct.edu.cn/meol/common/question/test/student/list.jsp?sortColumn=createTime&status=1&tagbug=client&sortDirection=-1&strStyle=new03&cateId={course_id}&pagingPage=1&pagingNumberPer=30"
-                
-                formatted_tests.append({
-                    "title": test.get('course_name', '未知测试'),
-                    "date": "2025-09-22",
-                    "deadline": "待查询",
-                    "status_text": "可进行",
-                    "can_take_test": True,
-                    "test_link": test_link
-                })
-            
-            return {
-                "success": True,
-                "data": {
-                    "tests": formatted_tests,
-                    "stats": {
-                        "total_tests": len(formatted_tests),
-                        "available_tests": len(formatted_tests),
-                        "completed_tests": 0
-                    }
-                }
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        """与标准客户端共用真实栏目发现，避免返回模拟日期/课程占位项。"""
+        from .client import BUCTClient as StandardClient
+        return StandardClient.get_tests_by_category(self, cate_id, **kwargs)
     
     def get_available_tests(self, cate_id, **kwargs):
         """获取可用测试"""
