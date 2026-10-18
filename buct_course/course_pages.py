@@ -1,7 +1,8 @@
 """Bounded, authenticated discovery of MEOL list/column pages (never task actions)."""
 
 from collections import deque
-from datetime import parsedate_to_datetime, timezone
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 import posixpath
 import re
 import time
@@ -121,7 +122,7 @@ class CoursePages:
                 raise ParseError('栏目/分页数量超过抓取上限，结果可能不完整')
             seen.add(key)
             requests_count += 1
-            response = self.session.get(url, headers={'Referer': referer}, timeout=15, allow_redirects=False)
+            response = self._get(url, referer)
             response.raise_for_status()
             location = response.headers.get('Location') or response.headers.get('location')
             if response.status_code in (301, 302, 303, 307, 308) and location:
