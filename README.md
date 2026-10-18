@@ -5,14 +5,11 @@
 
 一个功能完善的北京化工大学课程平台 Python 客户端，支持自动登录、获取作业和测试信息、智能时间提醒等功能。
 
-> 📖 **文档导航**: [快速入门](QUICKSTART.md) | [完整文档](#) | [示例代码](example/README.md) | [调试指南](DEBUGGING_NOTES.md) | [文档索引](DOCS.md)
-
 ## ✨ 主要特性
 
 ### 🔐 认证管理
-- 支持学号密码登录（学校统一身份认证 / CAS）
-- 口令使用 **SM2 国密**加密后提交，不依赖浏览器 JS，纯 Python 算法复现
-- 自动维护登录会话，并完成课程平台 SSO 票据回跳
+- 支持学号密码登录
+- 自动维护登录会话
 - 安全的会话管理机制
 
 ### 📝 作业管理
@@ -37,56 +34,6 @@
 - 统计作业和测试数量
 - 识别紧急任务（24小时内截止）
 - 计算并显示剩余时间
-
-## 🔐 登录机制说明（重要）
-
-> **v1.4.0 起登录方式已整体切换到学校统一身份认证（CAS）。对外 API 没有任何变化，旧代码无需修改。**
-
-### 旧逻辑（已废弃）
-
-早期版本直接向课程平台 MEOL 的接口提交表单：
-
-```
-POST https://course.buct.edu.cn/meol/loginCheck.do
-     IPT_LOGINUSERNAME=<学号>&IPT_LOGINPASSWORD=<明文密码>&logintoken=<毫秒时间戳>
-```
-
-这套逻辑**已经不可用**：
-
-- `/meol/loginCheck.do` 现在返回 **404**，学校已下线该接口，这正是旧版本「登录不稳定」的根因；
-- 它把**明文密码**放进请求体，安全性也差。
-
-相关代码已在 v1.4.0 从 `buct_course/auth.py` 中**彻底移除**（`BUCTAuth` 不再存在 `_legacy_meol_login`）。
-
-### 新逻辑（v1.4.0 起）
-
-改走 `portal.buct.edu.cn` 的统一身份认证，完整流程：
-
-| 步骤 | 请求 | 作用 |
-|------|------|------|
-| 1 | `GET course.buct.edu.cn/meol/homepage/common/sso_login.jsp` | 拿到本次登录的 `service` 参数 |
-| 2 | `GET portal.buct.edu.cn/cas/login?service=<service>` | 服务端下发 `COOKIE_INFO` cookie，其中 `data.flowKey` 即 **`flowKey`** |
-| 3 | `GET portal.buct.edu.cn/cas/api/reset/rules` | 拿到 SM2 公钥 |
-| 4 | — | 口令先全角转半角，再用 **SM2** 加密 |
-| 5 | `POST portal.buct.edu.cn/cas/username-password/login` | 提交 `{"username", "password", "flowKey"}` |
-| 6 | 跟随 `data.service` 回跳 | 完成课程平台 SSO 票据校验，建立 MEOL 会话 |
-
-### 两个参数的处理方式
-
-| 参数 | 说明 |
-|------|------|
-| `flowKey` | **服务端下发的一次性令牌**，形如 `flow.<64 位 hex>`，并非客户端计算。**不可重复使用**（复用会返回 `180076`），因此每次登录都会重新获取；失效时自动换新重试一次 |
-| `password` | `base64(C1.x ‖ C1.y ‖ C3 ‖ C2)`。SM2 密文，其中 C1 为 64 字节、**不带 `04` 未压缩点前缀**；加密前口令会先做全角转半角（对齐前端 `fullToHalf`） |
-
-`buct_course/sm2_crypto.py` 是**零依赖**的纯 Python SM2 + SM3 实现：不需要执行站点 JS，也没有引入 `gmssl` 等第三方加密库。
-
-### 对使用者的影响
-
-- ✅ `BUCTAuth` / `BUCTClient` 的函数名、参数、返回值**完全没变**，原有代码不用改
-- ✅ 口令不再明文直连 MEOL，而是以 SM2 密文提交
-- ⚠️ **开启 MFA 二次验证或图形验证码的账号目前无法登录**，会抛出带明确说明的 `LoginError`；请先在浏览器完成一次登录，或联系管理员确认
-- ⚠️ 连续输错密码会触发学校侧锁定（`180028` 临时锁定 30 分钟 / `180029` 锁死），**请勿用脚本暴力试密码**
-- ℹ️ 登录成功后门户会下发 `TGC` cookie，可用于后续免密换取其它系统的票据
 
 ## 📦 安装
 
@@ -232,8 +179,7 @@ python test_diagnosis.py
 python-buct-course/
 ├── buct_course/              # 核心包
 │   ├── __init__.py          # 包初始化，导出主要类
-│   ├── auth.py              # 认证模块（统一身份认证登录、会话管理）
-│   ├── sm2_crypto.py        # 零依赖 SM2 / SM3 实现（口令加密）
+│   ├── auth.py              # 认证模块（登录、会话管理）
 │   ├── client.py            # 主客户端（BUCTClient）
 │   ├── client_optimized.py  # 优化版客户端（BUCTCourseClient）
 │   ├── course_utils.py      # 课程工具（作业获取、解析）
@@ -258,9 +204,6 @@ python-buct-course/
 ### BUCTCourseClient 类（推荐使用）
 
 这是优化后的客户端，提供更简洁的API和更好的性能。
-
-> ℹ️ `BUCTCourseClient` 是 `buct_course.client_optimized.BUCTClient` 的**别名**，为兼容早期文档中的写法而保留。
-> 包根直接导出的 `BUCTClient` 来自 `buct_course.client`。两者目前公开方法完全一致。
 
 #### 初始化
 
@@ -436,13 +379,12 @@ except ParseError as e:
 ## ⚠️ 注意事项
 
 1. **网络要求**
-   - 需要能够访问北化课程平台（`course.buct.edu.cn`）**和**统一身份认证（`portal.buct.edu.cn`）
+   - 需要能够访问北化课程平台（course.buct.edu.cn）
    - 建议在校园网环境下使用，外网可能需要VPN
 
 2. **登录凭据**
    - 使用正确的学号和密码
-   - 密码不会被存储，仅用于登录；v1.4.0 起以 SM2 密文提交，不再明文传输
-   - 开启 MFA / 图形验证码的账号暂不支持，详见上方「登录机制说明」
+   - 密码不会被存储，仅用于登录
 
 3. **请求频率**
    - 项目已内置延迟机制，避免过快请求
@@ -453,9 +395,8 @@ except ParseError as e:
    - 建议定期运行以获取最新信息
 
 5. **兼容性**
-   - 登录部分基于 v1.4.0（2026年9月）的统一身份认证接口
-   - 作业 / 测试解析部分基于当前课程平台页面结构
-   - 如果平台更新可能需要调整对应逻辑
+   - 基于当前（2025年11月）的课程平台页面结构
+   - 如果平台更新可能需要调整解析逻辑
 
 ## 🐛 故障排除
 
@@ -466,16 +407,8 @@ except ParseError as e:
 A: 检查以下几点：
 - 学号和密码是否正确
 - 网络连接是否正常
-- 是否能够访问 `course.buct.edu.cn` 与 `portal.buct.edu.cn`（两者都需要）
-- 查看抛出的 `LoginError` 具体文案，常见的有：
-  - `用户名或密码错误` → 口令不对
-  - `该账号需要 MFA 二次验证…` / `需要图形验证码…` → 本库暂不支持，请先在浏览器登录一次
-  - `账号登录失败次数过多，已临时锁定…` → 等待 30 分钟再试
-  - `flowKey 已被使用过` → 已自动重试；若反复出现请提 Issue
-
-**Q1b: 旧版本能登录，升级到 1.4.0 后不行了？**
-
-A: 学校已下线旧的 `/meol/loginCheck.do` 接口（现返回 404），所以**任何**仍走旧逻辑的版本都会失败。1.4.0 已改为统一身份认证，正常账号可直接使用；若你的账号开启了 MFA 或验证码，见 Q1 说明。
+- 是否能够访问 course.buct.edu.cn
+- 查看详细错误信息
 
 **Q2: 获取数据时出现超时**
 
@@ -573,20 +506,3 @@ logging.basicConfig(level=logging.DEBUG)
 
 ### v1.2.0
 - 修复部分抓取失败bug
-
-### v1.3.0
-- 增强会话管理与登录流程：登录时重建 session，避免旧 cookie / 旧登录态干扰
-
-### v1.4.0
-- **登录整体切换到学校统一身份认证（CAS）**。旧的 `/meol/loginCheck.do` 直连逻辑已彻底移除——该接口现已返回 404
-- 新增零依赖纯 Python SM2 + SM3 实现（`buct_course/sm2_crypto.py`），口令以 SM2 密文提交，不再明文传输
-- `flowKey` 一次性令牌自动获取，失效时自动换新重试
-- 登录后自动跟随 `data.service` 回跳，完成课程平台 SSO 票据校验
-- 登录失败给出可读原因（口令错误 / 需要 MFA / 需要验证码 / 账号锁定 / flowKey 失效）
-- 修复 `example/` 中把 `login()` 的返回值当成 session 使用的错误写法
-- 打包收窄：wheel 只包含 `buct_course`，不再把 `example/`、`test/` 装成顶层包
-- 统一版本号来源（`pyproject.toml` / `setup.py` / `__init__.py` / `uv.lock` 此前不一致）
-
-### v1.4.1
-- 新增 `BUCTCourseClient` 别名（指向 `client_optimized.BUCTClient`），修复文档中该名字不存在导致的 `ImportError`
-- README 补充别名说明

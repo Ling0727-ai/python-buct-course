@@ -25,6 +25,7 @@ setup(
     install_requires=[
         "requests>=2.25.0",
         "beautifulsoup4>=4.9.0",
+        "pycryptodome>=3.20.0",
     ],
     keywords="buct, education, api, automation",
 )
